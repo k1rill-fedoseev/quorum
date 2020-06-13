@@ -1048,6 +1048,11 @@ func (w *worker) commit(uncles []*types.Header, interval func(), update bool, st
 
 	s := w.current.state.Copy()
 	ps := w.current.privateState.Copy()
+
+	if w.chainConfig.BlockReward != nil {
+		core.CallBlockReward(s, w.chain, w.current.header, w.chainConfig)
+	}
+
 	block, err := w.engine.FinalizeAndAssemble(w.chain, w.current.header, s, w.current.txs, uncles, w.current.receipts)
 	if err != nil {
 		return err
