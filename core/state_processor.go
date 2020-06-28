@@ -17,11 +17,6 @@
 package core
 
 import (
-	"math"
-	"math/big"
-	"strings"
-
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc"
@@ -29,7 +24,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -93,11 +87,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb, privateState *stat
 			allLogs = append(allLogs, privateReceipt.Logs...)
 		}
 	}
-
-	if p.config.BlockReward != nil {
-		CallBlockReward(statedb, p.bc, header, p.config)
-	}
-
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles())
 
@@ -181,31 +170,4 @@ func ApplyTransaction(config *params.ChainConfig, bc *BlockChain, author *common
 	}
 
 	return receipt, privateReceipt, err
-}
-
-func CallBlockReward(state *state.StateDB, bc *BlockChain, header *types.Header, config *params.ChainConfig) {
-	var from = common.HexToAddress("0x0")
-	var to common.Address = config.BlockReward.Contract
-	var bigZero = big.NewInt(0)
-	var gas uint64 = math.MaxUint64
-	log.Trace("Call to block reward contract", "address", to)
-	abi, _ := abi.JSON(strings.NewReader(`[{"type":"function","name":"reward","constant":false,"inputs":[{"name":"benefactors","type":"address[]"},{"name":"kind","type":"uint16[]"}],"outputs":[{"name":"receivers","type":"address[]"},{"name":"values","type":"uint256[]"}]}]`))
-	calldata, _ := abi.Pack("reward", [0]common.Address{}, [0]uint16{})
-	msg := types.NewMessage(from, &to, 0, bigZero, gas, bigZero, calldata, false)
-	evmContext := NewEVMContext(msg, header, bc, nil)
-	// Create a new environment which holds all relevant information
-	// about the transaction and calling mechanisms.
-	evm := vm.NewEVM(evmContext, state, state, config, vm.Config{})
-	gaspool := new(GasPool).AddGas(gas)
-	ret, _, _, _ := NewStateTransition(evm, msg, gaspool).TransitionDb()
-
-	receivers := make([]common.Address, 0, 1)
-	values := make([]*big.Int, 0, 1)
-	_ = abi.Unpack(&[]interface{}{&receivers, &values}, "reward", ret)
-
-	state.SetNonce(from, 0)
-	for i, receiver := range receivers {
-		log.Trace("Minting coins", "receiver", receiver, "values", *values[i])
-		state.AddBalance(receiver, values[i])
-	}
 }
